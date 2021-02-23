@@ -3,6 +3,7 @@ package ru.runa.wfe.chat.utils;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 import ru.runa.wfe.execution.logic.ExecutionLogic;
@@ -30,13 +31,13 @@ public class RecipientCalculatorTest {
     @Mock
     private User user;
     private Set<Actor> actors;
+    @InjectMocks
     private RecipientCalculator calculator;
     private final Long processId = 1L;
 
     @Before
     public void init() {
         actors = newHashSet(createActor("first"), createActor("second"), createActor("third"));
-        calculator = new RecipientCalculator(executorDao, executionLogic);
     }
 
     @Test
@@ -51,6 +52,7 @@ public class RecipientCalculatorTest {
 
     @Test
     public void whenMessageIsPrivate_thenReturnMentionedActors() {
+        when(user.getActor()).thenReturn(createActor("first"));
         when(executorDao.getExecutor(eq("first"))).thenReturn(createActor("first"));
         when(executorDao.getExecutor(eq("second"))).thenReturn(createActor("second"));
 
@@ -61,6 +63,7 @@ public class RecipientCalculatorTest {
 
     @Test
     public void whenMentionedExecutorIsGroup_thenReturnGroupActors() {
+        when(user.getActor()).thenReturn(createActor("first"));
         when(executorDao.getExecutor(eq("group"))).thenReturn(createGroup());
         when(executorDao.getGroupActors(eq(createGroup()))).thenReturn(actors);
 
@@ -71,6 +74,7 @@ public class RecipientCalculatorTest {
 
     @Test
     public void whenExceptionIsCaught_thenMethodContinuesToRun() {
+        when(user.getActor()).thenReturn(createActor("first"));
         when(executorDao.getExecutor(eq("first"))).thenReturn(createActor("first"));
         doThrow(new ExecutorDoesNotExistException("incorrect", Actor.class))
                 .when(executorDao).getExecutor(eq("incorrect"));

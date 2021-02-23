@@ -48,12 +48,11 @@
 %>
 <wf:taskDetails batchPresentationId="listTasksForm" title="<%= title %>" taskId="<%= taskId %>" buttonAlignment="right" action="/processTaskAssignment" returnAction="/submitTaskDispatcher.do"/>
 <% if(WebResources.isChatEnabled()){%>
-<link rel="stylesheet" type="text/css" href="<html:rewrite page='<%="/css/chat.css?"+Version.getHash() %>' />">
-<script type="text/javascript" src="/wfe/js/chat.js"></script>
 <div style="float:left; max-width: 150px; margin-top: -25px;">
-	<a id="openChatButton" onclick="openChat()"><span id="openChatButtonText"></span><span id="countNewMessages" class="countNewMessages" title="Непрочитанные">0</span></a>
+	<% String href = "/wfe/chat_page.do?processId=" +
+			Delegates.getTaskService().getTask(Commons.getUser(request.getSession()), taskId).getProcessId();%>
+	<a href="<%= href %>">Открыть чат</a>
 </div>
-<div id="ChatForm"  processId="<%= Delegates.getTaskService().getTask(Commons.getUser(request.getSession()), taskId).getProcessId() %>"></div>
 <% }%>
 <% if (WebResources.isTaskDelegationEnabled()) { %>
 	<wf:taskFormDelegationButton taskId="<%= taskId %>" />

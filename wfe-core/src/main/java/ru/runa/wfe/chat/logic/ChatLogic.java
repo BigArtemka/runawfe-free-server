@@ -13,104 +13,102 @@ import javax.mail.PasswordAuthentication;
 import javax.mail.Transport;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
+import net.bull.javamelody.MonitoredWithSpring;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import ru.runa.wfe.chat.ChatMessage;
 import ru.runa.wfe.chat.ChatMessageFile;
-import ru.runa.wfe.chat.dao.ChatDao;
+import ru.runa.wfe.chat.dao.ChatFileIo;
+import ru.runa.wfe.chat.dao.ChatMessageDao;
+import ru.runa.wfe.chat.dto.ChatMessageFileDto;
 import ru.runa.wfe.chat.dto.broadcast.MessageAddedBroadcast;
+import ru.runa.wfe.chat.mapper.ChatMessageFileDetailMapper;
+import ru.runa.wfe.chat.mapper.MessageAddedBroadcastFileMapper;
+import ru.runa.wfe.chat.mapper.MessageAddedBroadcastMapper;
 import ru.runa.wfe.commons.ClassLoaderUtil;
 import ru.runa.wfe.commons.logic.WfCommonLogic;
+import ru.runa.wfe.security.AuthorizationException;
 import ru.runa.wfe.user.Actor;
 import ru.runa.wfe.user.Executor;
 import ru.runa.wfe.user.User;
 
+@MonitoredWithSpring
 public class ChatLogic extends WfCommonLogic {
-    private Properties properties = ClassLoaderUtil.getProperties("chat.email.properties", false);
-
+    private final Properties properties = ClassLoaderUtil.getProperties("chat.email.properties", false);
     @Autowired
-    private ChatDao chatDao;
+    private ChatMessageDao messageDao;
+    @Autowired
+    private MessageAddedBroadcastMapper messageMapper;
+    @Autowired
+    private MessageAddedBroadcastFileMapper messageFileMapper;
+    @Autowired
+    private ChatMessageFileDetailMapper fileDetailMapper;
+    @Autowired
+    private ChatFileIo fileIo;
+    @Autowired
+    private MessageTransactionWrapper messageTransactionWrapper;
 
-    public List<Long> getMentionedExecutorIds(Long messageId) {
-        return chatDao.getMentionedExecutorIds(messageId);
+    public MessageAddedBroadcast saveMessage(User user, Long processId, ChatMessage message, Set<Actor> recipients) {
+        final ChatMessage savedMessage = messageTransactionWrapper.save(message, recipients, processId);
+        return messageMapper.toDto(savedMessage);
     }
 
-    public void deleteFile(User user, Long id) {
-        chatDao.deleteFile(user, id);
+    public MessageAddedBroadcast saveMessage(User user, Long processId, ChatMessage message, Set<Actor> recipients, List<ChatMessageFileDto> files) {
+        final List<ChatMessageFile> savedFiles = fileIo.save(files);
+        try {
+            final ChatMessage savedMessage = messageTransactionWrapper.save(message, recipients, savedFiles, processId);
+            final MessageAddedBroadcast broadcast = messageMapper.toDto(savedMessage);
+            broadcast.setFiles(fileDetailMapper.toDtos(savedFiles));
+            return broadcast;
+        } catch (Exception exception) {
+            fileIo.delete(savedFiles);
+            throw exception;
+        }
     }
 
-    public ChatMessage saveMessageAndBindFiles(User user, Long processId, ChatMessage message, Set<Actor> recipients,
-                                               ArrayList<ChatMessageFile> files) {
-        message.setProcess(processDao.get(processId));
-        return chatDao.saveMessageAndBindFiles(message, files, recipients);
+    @Transactional
+    public void readMessage(User user, Long messageId) {
+        messageDao.readMessage(user.getActor(), messageId);
     }
 
-    public void readMessage(Actor user, Long messageId) {
-        chatDao.readMessage(user, messageId);
-    }
-
-    public Long getLastReadMessage(Actor user, Long processId) {
-        return chatDao.getLastReadMessage(user, processId);
-    }
-
-    public Long getLastMessage(Actor user, Long processId) {
-        return chatDao.getLastMessage(user, processId);
-    }
-
-    public List<Long> getActiveChatIds(Actor user) {
-        List<Long> ret = chatDao.getActiveChatIds(user);
+    public List<Long> getActiveChatIds(User user) {
+        List<Long> ret = messageDao.getActiveChatIds(user.getActor());
         if (ret == null) {
-            ret = new ArrayList<Long>();
+            ret = new ArrayList<>();
         }
         return ret;
     }
 
-    public List<Long> getNewMessagesCounts(List<Long> chatsIds, Actor user) {
-        return chatDao.getNewMessagesCounts(chatsIds, user);
+    public List<Long> getNewMessagesCounts(User user, List<Long> chatsIds) {
+        return messageDao.getNewMessagesCounts(chatsIds, user.getActor());
     }
 
-    public Long getNewMessagesCount(Actor user, Long processId) {
-        return chatDao.getNewMessagesCount(user, processId);
+    public ChatMessage getMessageById(User user, Long messageId) {
+        return messageDao.get(messageId);
     }
 
-    public ChatMessage getMessage(Actor actor, Long messageId) {
-        return chatDao.getMessage(messageId);
+    @Transactional
+    public List<MessageAddedBroadcast> getMessages(User user, Long processId) {
+        List<ChatMessage> messages = messageDao.getMessages(user.getActor(), processId);
+        if (!messages.isEmpty()) {
+            messageDao.readMessage(user.getActor(), messages.get(0).getId());
+        }
+        return messageFileMapper.toDtos(messages);
     }
 
-    public List<MessageAddedBroadcast> getMessages(Actor user, Long processId, Long firstId, int count) {
-        return chatDao.getMessages(user, processId, firstId, count);
+    public void deleteMessage(User user, Long messageId) {
+        fileIo.delete(messageTransactionWrapper.delete(user, messageId));
     }
 
-    public List<MessageAddedBroadcast> getNewMessages(Actor user, Long processId) {
-        return chatDao.getNewMessages(user, processId);
+    public void updateMessage(User user, ChatMessage message) {
+        if (!message.getCreateActor().equals(user.getActor())) {
+            throw new AuthorizationException("Allowed for author only");
+        }
+        messageDao.update(message);
     }
 
-    public Long saveMessage(User user, Long processId, ChatMessage message, Set<Actor> recipients) {
-        message.setProcess(processDao.get(processId));
-        return chatDao.save(message, recipients);
-    }
-
-    public void deleteMessage(Actor actor, Long messId) {
-        chatDao.deleteMessage(messId);
-    }
-
-    public List<ChatMessageFile> getMessageFiles(Actor actor, ChatMessage message) {
-        return chatDao.getMessageFiles(actor, message);
-    }
-
-    public ChatMessageFile saveFile(ChatMessageFile file) {
-        return chatDao.saveFile(file);
-    }
-
-    public ChatMessageFile getFile(Actor actor, Long fileId) {
-        return chatDao.getFile(actor, fileId);
-    }
-
-    public void updateMessage(Actor actor, ChatMessage message) {
-        chatDao.updateMessage(message);
-    }
-
-    public void sendNotifications(ChatMessage chatMessage, Collection<Executor> executors) {
+    public void sendNotifications(User user, ChatMessage chatMessage, Collection<Executor> executors) {
         if (properties.isEmpty()) {
             log.debug("chat.email.properties are not defined");
             return;
@@ -147,5 +145,4 @@ public class ChatLogic extends WfCommonLogic {
             log.warn("Unable to send chat email notification", e);
         }
     }
-
 }

@@ -1,8 +1,7 @@
 package ru.runa.wfe.chat.socket;
 
-import java.io.IOException;
-import javax.websocket.Session;
 import lombok.extern.apachecommons.CommonsLog;
+import net.bull.javamelody.MonitoredWithSpring;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,13 +19,14 @@ public class ReadMessageHandler implements ChatSocketMessageHandler<ReadMessageR
 
     @Transactional
     @Override
-    public void handleMessage(Session session, ReadMessageRequest dto, User user) throws IOException {
-        Long currentMessageId = dto.getCurrentMessageId();
-        chatLogic.readMessage(user.getActor(), currentMessageId);
+    @MonitoredWithSpring
+    public void handleMessage(ReadMessageRequest request, User user) {
+        Long messageId = request.getMessageId();
+        chatLogic.readMessage(user, messageId);
     }
 
     @Override
-    public boolean isSupports(Class<? extends MessageRequest> messageType) {
-        return messageType.equals(ReadMessageRequest.class);
+    public Class<? extends MessageRequest> getRequestType() {
+        return ReadMessageRequest.class;
     }
 }
